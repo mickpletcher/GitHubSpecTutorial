@@ -114,8 +114,8 @@ A folder containing a `SKILL.md` file. Copilot reads the `name` and `description
 ---
 name: skill-name          # Must match the folder name exactly. Lowercase + hyphens. Max 64 chars.
 description: >            # Max 1024 chars. Include every phrase a developer would type.
-	What this skill does.
-	Use this when asked to X, Y, or Z.
+  What this skill does.
+  Use this when asked to X, Y, or Z.
 ---
 ```
 
@@ -125,7 +125,7 @@ The `name` and folder name must be identical. VS Code silently skips skills wher
 
 VS Code discovers skills from these directories:
 
-```
+```text
 # Project skills (anyone who clones the repo gets them)
 .github/skills/<skill-name>/SKILL.md
 .claude/skills/<skill-name>/SKILL.md
