@@ -1124,6 +1124,124 @@ Substitute the actual GitHub username and project name from Step 1 into the Next
 
 ---
 
+---
+
+## Tutorial: Understanding what was built
+
+This section explains the decisions behind every file the prompt created. Read it after the prompt completes and you have reviewed the generated output. It will help you customize the skills for your actual stack and understand how to grow the catalog over time.
+
+---
+
+### Why the skill directory commits on day one
+
+The prompt creates `.github/skills/` and commits it before any application code exists. This is a deliberate architectural decision, not a convention.
+
+Skills that are added after a codebase is established are documentation — they describe patterns that already exist. Skills that are created alongside the first design decisions are constraints — they encode the patterns as they are being set, making them repeatable from the start. Every developer who joins the project later gets the same Copilot-assisted workflow without having to learn it manually first.
+
+If you add skills after writing application code, you are doing Project 2 (retrofit), not Project 1 (greenfield). The distinction matters because the source of skill content is different: in greenfield, the content comes from your design decisions; in retrofit, it comes from patterns that already exist in the codebase.
+
+---
+
+### Why these four skills specifically
+
+The prompt builds four skills because they cover the four decision points in a development loop where Copilot can add the most value with the least risk:
+
+**feature-scaffold** — the moment of creating new code. Every project has a "correct" structure for new features that is easy to miss or do inconsistently. The scaffold skill enforces it automatically without a developer having to remember the pattern.
+
+**code-review** — the moment before sharing code. This is the highest-value review a Copilot skill can do because it happens before a human reviewer sees the code, not as a replacement for human review. A skill that catches obvious issues before the PR is opened saves real time.
+
+**git-commit** — the moment of recording intent. Conventional Commits is only valuable if it is applied consistently. A skill that reads the diff and generates the message ensures every commit is typed correctly without mental overhead.
+
+**skill-scaffold** — the moment of recognizing a new workflow. As the project grows, new repeatable patterns emerge. This skill makes it easy to capture them immediately rather than letting them become undocumented tribal knowledge.
+
+You do not need to keep all four. If your team already has a strong code review process, remove `code-review`. If you do not use Conventional Commits, simplify `git-commit`. The scaffold is the starting point — customize it for your actual workflow.
+
+---
+
+### How the four skills work as a system
+
+The skills are not independent tools. They form a development loop:
+
+```
+/feature-scaffold [name]
+        ↓
+    Write the implementation
+        ↓
+/code-review
+        ↓
+    Fix any critical issues
+        ↓
+/git-commit
+        ↓
+    Push and open PR
+        ↓
+(New workflow identified)
+        ↓
+/skill-scaffold [new-skill-name]
+```
+
+The loop is designed so that each skill hands off cleanly to the next. `feature-scaffold` creates the files. `code-review` reviews them. `git-commit` records them. `skill-scaffold` extends the catalog when you notice a gap.
+
+None of these skills push to remote. Each one stops at a human decision point — the commit message confirmation, the review verdict, the file creation confirmation. This is intentional: skills augment the developer's judgment, they do not replace it.
+
+---
+
+### Why `skill-scaffold` has `disable-model-invocation: true`
+
+`skill-scaffold` is the only skill in the set that modifies the skill catalog itself. If it auto-invoked based on a description match — say, someone asked "can you scaffold a new component for me?" — Copilot might attempt to create a new skill folder rather than a new component. The description overlap is too large.
+
+Setting `disable-model-invocation: true` means it only runs when you type `/skill-scaffold` explicitly. You are always opting in to extending the catalog, never doing it accidentally.
+
+The same reasoning applies to any skill that creates files, runs destructive commands, or modifies project structure. When the action is irreversible or has broad scope, require explicit invocation.
+
+---
+
+### What to customize for your stack
+
+The generated skills use TypeScript/Express as the concrete example throughout. Here is what to change and what to leave alone for your actual stack.
+
+**Change these — they are stack-specific:**
+
+In `feature-scaffold/SKILL.md`:
+- File extensions (`.ts` → `.py`, `.cs`, `.go`)
+- Directory structure (`src/features/` → whatever your project uses)
+- The route registration step (Express `app.use` → FastAPI `app.include_router`, ASP.NET `MapControllers`, etc.)
+- The template code blocks in the skill body
+
+In `git-commit/SKILL.md`:
+- If your project does not use Conventional Commits, replace the type table with your team's commit format
+
+**Leave these alone — they are structural:**
+
+In all skills:
+- The `name` field (must match folder name)
+- The frontmatter structure
+- The `disable-model-invocation` setting on `skill-scaffold`
+- The confirmation step in `git-commit` (never remove the "wait for confirmation" instruction)
+- The conflict detection in `feature-scaffold` (never remove the "stop if feature exists" instruction)
+
+In `code-review/SKILL.md`:
+- The output format (Summary / Critical / Advisory / Missing coverage / Verdict)
+- The rule about grounding every comment in the actual diff
+- The rule about not flagging linter-handled style issues
+
+---
+
+### How to grow the catalog over time
+
+The four generated skills are a foundation. As the project matures, new repeatable workflows will emerge. Add them using `/skill-scaffold` when you notice:
+
+- A task you have explained to a new team member twice
+- A workflow that appears in commit history with the same sequence of steps
+- A process that lives in CONTRIBUTING.md but is easy to miss
+- A CI check that fails repeatedly because of a step developers forget
+
+The threshold for adding a skill is: more than two steps, done at least weekly, where missing a step costs real time. Below that threshold, a comment in code or a section in CONTRIBUTING.md is enough.
+
+When a skill becomes wrong — because the project structure changed or the team adopted a new convention — update the `SKILL.md` body and bump the `version` field. The skill is the authoritative source of the workflow. Keep it accurate.
+
+---
+
 ## Out of scope for this task
 
 - Do not create any application source code (`src/`, `lib/`, etc.)

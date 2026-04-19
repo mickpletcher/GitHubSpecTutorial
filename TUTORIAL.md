@@ -10,12 +10,15 @@ This tutorial walks through the Agent Skills specification from scratch to a ful
 2. [Prerequisites](#2-prerequisites)
 3. [Skill storage locations](#3-skill-storage-locations)
 4. [SKILL.md specification](#4-skillmd-specification)
-5. [Writing a skill that actually works](#5-writing-a-skill-that-actually-works)
-6. [Testing skills locally](#6-testing-skills-locally)
-7. [Packaging with skillpack.sh](#7-packaging-with-skillpacksh)
-8. [CI with GitHub Actions](#8-ci-with-github-actions)
-9. [Common mistakes](#9-common-mistakes)
-10. [Spec field reference](#10-spec-field-reference)
+5. [How Copilot loads a skill — the three-phase process](#5-how-copilot-loads-a-skill--the-three-phase-process)
+6. [Writing a skill that actually works](#6-writing-a-skill-that-actually-works)
+7. [Testing skills locally](#7-testing-skills-locally)
+8. [Packaging with skillpack.sh](#8-packaging-with-skillpacksh)
+9. [CI with GitHub Actions](#9-ci-with-github-actions)
+10. [Common mistakes](#10-common-mistakes)
+11. [Spec field reference](#11-spec-field-reference)
+12. [Project 1: Greenfield](#12-project-1-greenfield)
+13. [Project 2: Retrofit](#13-project-2-retrofit)
 
 ---
 
@@ -101,7 +104,7 @@ To load skills from a shared location — a central repo, a network drive, a mon
 
 ### Confirming VS Code sees your skills
 
-Type `/` in the Copilot Chat input. Every discovered skill appears in the menu alongside prompt files. If a skill is missing, the folder name or `name` frontmatter field is mismatched — see [Common mistakes](#9-common-mistakes).
+Type `/` in the Copilot Chat input. Every discovered skill appears in the menu alongside prompt files. If a skill is missing, the folder name or `name` frontmatter field is mismatched — see [Common mistakes](#10-common-mistakes).
 
 ---
 
@@ -147,7 +150,50 @@ Fields not in this list are ignored by VS Code but will not cause failures. This
 
 ---
 
-## 5. Writing a skill that actually works
+## 5. How Copilot loads a skill — the three-phase process
+
+Before writing a skill, you need to understand exactly what Copilot does with it. There are three distinct phases. Understanding them explains every authoring decision that follows.
+
+### Phase 1 — Discovery
+
+When you open Copilot Chat, VS Code scans all skill directories and reads only the frontmatter of each `SKILL.md`. It extracts `name` and `description` and builds an index. This is the only thing that runs at startup — the skill body is not loaded.
+
+When you type a prompt, Copilot runs a semantic match against every description in that index. If your prompt matches a description, the skill moves to Phase 2. If it does not match, the skill is never loaded.
+
+**Implication:** the description field is not documentation — it is a matching surface. Every phrase in it is a potential match target. A description that accurately describes the skill but does not contain the phrases developers actually type will never trigger auto-invocation.
+
+### Phase 2 — Instruction loading
+
+When a skill is matched, Copilot loads the full body of `SKILL.md` into context. The instructions, workflow steps, rules, and examples all become available to Copilot for that conversation turn.
+
+This is why the body can be long and detailed without performance cost. It is only loaded when relevant.
+
+**Implication:** write the body for correctness and completeness, not for brevity. A detailed step-by-step workflow is better than a vague high-level summary. Copilot follows explicit instructions more reliably than implicit ones.
+
+### Phase 3 — Resource access
+
+As Copilot works through the skill body, it encounters references to supporting files — scripts, templates, checklists, examples. It loads those files only when the instruction referencing them is reached.
+
+This lazy loading means you can have a skill that references a 500-line template file without that template consuming context on every turn. It is loaded precisely when needed and not before.
+
+**Implication:** move supporting material into separate files in the skill directory. Reference them in the skill body at the point where they are needed. This keeps the `SKILL.md` body focused on instructions while making detailed reference material available on demand.
+
+### What this means for authoring
+
+Every authoring decision in the next section maps to one of these three phases:
+
+| Decision | Phase it affects |
+|---|---|
+| Description phrase selection | Phase 1 — discovery |
+| `disable-model-invocation` setting | Phase 1 — blocks automatic match |
+| Body structure and detail level | Phase 2 — instruction quality |
+| Supporting file references | Phase 3 — resource access |
+
+A skill that fails at Phase 1 never loads, regardless of how good the body is. A skill that passes Phase 1 but has a vague body produces inconsistent results. A skill that passes Phase 1 and 2 but keeps all content inline instead of using supporting files wastes context on every invocation.
+
+---
+
+## 6. Writing a skill that actually works
 
 ### The name-folder match is enforced by VS Code, not by git
 
@@ -167,82 +213,265 @@ EOF
 
 ### Description quality determines auto-invocation
 
-Copilot matches skills against the description field alone during the discovery phase. If your description is too narrow, the skill will not fire when it should.
+Copilot matches your prompt against the `description` field during Phase 1 discovery. The match is semantic, not exact — but it heavily favors phrases that appear verbatim in the description. A description that accurately describes what a skill does but does not contain the words a developer types when asking for help will miss most invocations.
 
-**Weak description:**
+**Weak description — correct but untriggered:**
 ```
-Helps with code reviews.
+Reviews code changes and produces structured feedback.
+```
+This is accurate. A developer asking "review my PR" may not trigger it because "PR" and "review" appear in the description but "check my diff", "give me feedback", "is this safe to merge" — common phrasings — do not.
+
+**Strong description — same skill, broad match surface:**
+```
+Reviews staged or committed code changes and produces structured feedback organized
+by severity. Use this when asked to review a PR, check a diff, give feedback on
+code quality, audit a change set, identify risks in a branch, summarize what
+changed before merging, or check if code is safe to merge.
 ```
 
-**Strong description:**
-```
-Reviews code changes and produces structured feedback. Use this when asked
-to review a PR, check a diff, give feedback on code quality, audit a change
-set, identify risks in a branch, or summarize what changed before merging.
-```
+The spec allows 1024 characters. The strong version above uses 328. There is room for more.
 
-Enumerate the phrases a developer would actually type. The spec allows 1024 characters — use them.
+### How to derive description phrases
+
+The instinct is to describe what the skill does. The correct approach is to list how a developer asks for what the skill does. These are different questions.
+
+**Step 1 — State the outcome the skill produces:**
+"Produces a structured code review with critical issues and a verdict."
+
+**Step 2 — List every way a developer might ask for that outcome:**
+- "review my PR"
+- "check this diff"
+- "give me feedback on my changes"
+- "is this safe to merge"
+- "audit this change set"
+- "what are the risks in this branch"
+- "summarize what changed"
+
+**Step 3 — Add synonyms for the action and the subject:**
+- Action synonyms: review, check, audit, inspect, analyze, look at
+- Subject synonyms: PR, pull request, diff, change set, branch, code, changes
+
+**Step 4 — Assemble into the description field:**
+Combine the outcome statement with the phrase list. Start with what the skill does. Follow with "Use this when asked to..." and list every phrase from Step 2 and Step 3.
+
+**Step 5 — Test against your own usage:**
+For three days, every time you would naturally ask Copilot for something this skill handles, write down exactly what you typed. If any of those phrases are not in the description, add them.
 
 ### When to set `disable-model-invocation: true`
 
-Use this for skills where accidental auto-invocation would be disruptive:
+This field controls Phase 1 behavior. When set to `true`, Copilot will never auto-load the skill based on description matching — it only loads when the user types `/skill-name` explicitly.
 
-- Skills that scaffold files or directories (you want explicit opt-in)
-- Skills that run terminal commands
-- Skills that produce long-form output like release notes or changelogs
-- Meta-skills that manage the skill catalog itself
+Use it when accidental auto-invocation would be disruptive or wrong:
 
-Leave it at default for skills that analyze, review, or advise.
+**Good candidates for `disable-model-invocation: true`:**
+- Skills that scaffold files or create directories — you want deliberate opt-in, not accidental creation
+- Skills that run terminal commands — unintended execution is a real risk
+- Skills that produce long-form output (release notes, changelogs) — these consume significant context and should be intentional
+- Meta-skills that manage the skill catalog — you never want these loading during normal coding conversations
 
-### Referencing supporting files
+**Good candidates to leave at default (auto-invocable):**
+- Code review skills — the trigger is obvious ("review my changes") and the cost of accidental invocation is low
+- Git commit skills — the trigger is unambiguous and the skill always asks for confirmation before acting
+- Analysis and advisory skills — read-only, no side effects, safe to auto-load
 
-The skill body can reference files in the same directory using relative paths. Copilot loads them lazily — only when the instruction that references them is reached.
+**The `user-invocable: false` combination:**
 
+Setting `user-invocable: false` with `disable-model-invocation` left at default creates a background knowledge skill — Copilot can auto-load it when relevant but it does not appear in the `/` menu. Use this for skills that provide context or guidelines Copilot should apply automatically without surfacing as a user command. Example: a skill that encodes your team's code review criteria, loaded automatically whenever code is discussed but not something a developer would invoke directly.
+
+### Invocation control scenarios
+
+| What you want | Settings |
+|---|---|
+| Skill auto-invokes and appears in `/` menu | both fields omitted (default) |
+| Background knowledge — auto-invokes, hidden from `/` menu | `user-invocable: false` |
+| Explicit-only — visible in `/` menu, never auto-invokes | `disable-model-invocation: true` |
+| Disabled | both set |
+
+### Referencing supporting files — end-to-end example
+
+The skill body can reference files inside the skill directory using relative paths. Copilot loads them at Phase 3 — only when the instruction referencing them is executed.
+
+Consider a skill that enforces a PR checklist. The checklist is long and detailed. Instead of embedding it in the skill body, you put it in a separate file and reference it:
+
+**Directory structure:**
+```
+.github/skills/code-review/
+├── SKILL.md
+├── review-checklist.md     ← supporting file
+└── README.md
+```
+
+**Reference in SKILL.md body:**
 ```markdown
-## Setup
+## Review process
 
-Follow the steps in [./setup-checklist.md](./setup-checklist.md) before running the scan.
+Work through every item in the [review checklist](./review-checklist.md) before
+producing the verdict. Do not skip items marked as required.
+```
 
-## Script
+**Contents of `review-checklist.md`:**
+```markdown
+## Required checks
+- [ ] No hardcoded credentials or secrets
+- [ ] Error paths are handled and tested
+- [ ] No N+1 query patterns introduced
+- [ ] Input validation present on all user-facing routes
+- [ ] No commented-out code committed
 
-Run the included validation script:
+## Advisory checks
+- [ ] Function names describe behavior, not implementation
+- [ ] No magic numbers without named constants
+- [ ] Tests cover the new behavior, not just the happy path
+```
 
+When Copilot reaches the instruction that references `./review-checklist.md`, it loads the file. The checklist is now in context for that turn. On turns where the code-review skill is not invoked, the checklist never loads.
+
+This pattern scales cleanly. A scaffold skill might reference a 200-line template file. A migration skill might reference a SQL patterns guide. None of those files consume context unless the skill that references them is active.
+
+### Complete worked example — from blank directory to working skill
+
+This example builds a complete `db-migration` skill from scratch, showing every decision.
+
+**Step 1 — Create the directory:**
 ```bash
-bash ./validate.sh
+mkdir -p .github/skills/db-migration
 ```
-```
 
-This keeps `SKILL.md` concise while making detailed supporting material available on demand.
+**Step 2 — Derive the description phrases:**
+Outcome: "Creates a database migration file following the project's naming convention and schema change patterns."
 
-### Body structure that performs well
+Developer phrases: "add a migration", "create a migration", "add a database migration", "write a migration for...", "schema change", "add a column", "create a table migration", "db migration"
 
-The spec has no required body format. This pattern works reliably:
-
+**Step 3 — Write the SKILL.md:**
 ```markdown
+---
+name: db-migration
+version: 1.0.0
+description: Creates a new database migration file following project conventions. Use this when asked to add a migration, create a database migration, write a migration for a schema change, add a column, create a table, or make any database schema modification.
+argument-hint: "[description] brief description of the schema change (e.g., add-users-email-index)"
+disable-model-invocation: true
+---
+
+# Database Migration
+
+Creates a new migration file following this project's naming convention and schema change patterns.
+
 ## When to use this skill
 
-Explicit list of scenarios. Tells Copilot exactly when the skill applies.
+Use this skill when asked to:
+- Add a new migration
+- Create a schema change
+- Add or remove columns from a table
+- Create or drop a table
+- Add indexes or constraints
 
-## Inputs
+## Required input
 
-What context or files Copilot should look for before starting.
+A description of the schema change in kebab-case (e.g., `add-users-email-index`, `create-products-table`). If not provided, ask before creating any files.
 
-## Workflow
+## Migration naming convention
 
-Numbered steps. Be specific. Vague instructions produce vague output.
+```
+{timestamp}_{description}.ts
 
-## Output format
+Example: 20260419_add-users-email-index.ts
+```
 
-What the result should look like. Include an example if the format is non-obvious.
+Generate the timestamp with: `date +%Y%m%d`
+
+## File location
+
+```
+db/migrations/{timestamp}_{description}.ts
+```
+
+## Template
+
+Follow the pattern in [./migration-template.ts](./migration-template.ts).
+
+## Rules
+
+- Every migration must have both an `up()` and a `down()` method
+- The `down()` method must exactly reverse what `up()` does
+- Never modify an existing migration file — create a new one
+- Run `npm run db:migrate:validate` after creating the file to check syntax
 
 ## Edge cases
 
-What to do when inputs are missing, ambiguous, or out of scope.
+- If `db/migrations/` does not exist, create it before creating the file
+- If a migration with this timestamp already exists, increment the timestamp by 1 second
+- If the description is missing, stop and ask before creating anything
 ```
+
+**Step 4 — Add the supporting template file:**
+```bash
+touch .github/skills/db-migration/migration-template.ts
+```
+
+Write the template — the actual content depends on your ORM. The key point is that it lives in the skill directory and loads only when Copilot reaches the instruction that references it.
+
+**Step 5 — Write README.md:**
+```markdown
+# db-migration
+
+Creates database migration files following the project's naming convention.
+
+## Usage
+
+Type `/db-migration` in Copilot Chat (explicit invocation only — this skill does not auto-invoke).
+
+## What it creates
+
+A timestamped migration file under `db/migrations/` following the project template.
+Always includes both `up()` and `down()` methods.
+```
+
+**Step 6 — Validate:**
+```bash
+./scripts/skillpack.sh --validate
+# Expected: Validated 1 skill(s): db-migration
+```
+
+**Step 7 — Test:**
+Type `/db-migration add-users-email-index` in Copilot Chat. The skill loads, asks for confirmation of the file path and template, and creates the migration. Adjust the body if the output does not match your project's conventions.
+
+### Skill conflict avoidance
+
+When two skills have overlapping descriptions, Copilot may load both or choose unpredictably. This matters as your catalog grows past four or five skills.
+
+**Signs of description collision:**
+- Two skills both load when you type a prompt that should only match one
+- A skill loads unexpectedly when a different skill's trigger phrase is used
+
+**How to avoid collisions:**
+
+Use distinct anchor phrases in each description. The more specific the trigger, the narrower the match surface.
+
+Instead of two skills that both say "review code":
+```
+# Skill A — too broad
+Use this when asked to review code or check a change.
+
+# Skill B — too broad
+Use this when reviewing code or checking files.
+```
+
+Give each a distinct primary trigger:
+```
+# Skill A — code-review
+Use this when asked to review a PR, check a diff, or audit staged changes.
+Produces structured feedback with a merge verdict.
+
+# Skill B — security-review
+Use this when asked to security review code, check for vulnerabilities,
+audit for secrets, or assess code for security risks.
+```
+
+The primary trigger phrase anchors each skill to its intent. Overlap in secondary phrases is acceptable.
 
 ---
 
-## 6. Testing skills locally
+## 7. Testing skills locally
 
 ### Verify discovery
 
@@ -265,7 +494,7 @@ Open the Command Palette (`Ctrl+Shift+P`) and run `Chat: Open Chat Customization
 
 ---
 
-## 7. Packaging with skillpack.sh
+## 8. Packaging with skillpack.sh
 
 `scripts/skillpack.sh` validates all skills, builds a distributable directory, writes a manifest, and produces a `tar.gz` archive suitable for attaching to a GitHub release.
 
@@ -345,7 +574,7 @@ SHA-256 hashes are computed with `shasum`, `sha256sum`, or `openssl` — whichev
 
 ---
 
-## 8. CI with GitHub Actions
+## 9. CI with GitHub Actions
 
 The repository ships two workflows under `.github/workflows/`.
 
@@ -394,7 +623,7 @@ If your skill directories are not at the repository root, adjust the `repo_root`
 
 ---
 
-## 9. Common mistakes
+## 10. Common mistakes
 
 **Skill does not appear in the `/` menu**
 
@@ -430,7 +659,7 @@ With this flag set, the skill only responds to explicit `/skill-name` invocation
 
 ---
 
-## 10. Spec field reference
+## 11. Spec field reference
 
 Complete frontmatter with all fields and their defaults:
 
@@ -463,6 +692,37 @@ version: 1.0.0                     # Used by skillpack.sh to populate the JSON m
 | `false` | `false` (default) | No | Yes |
 | `true` (default) | `true` | Yes | No |
 | `false` | `true` | No | No |
+
+---
+
+## 12. Project 1: Greenfield
+
+See **[Project1-Greenfield.md](./Project1-Greenfield.md)**.
+
+Use this project if you are starting a new repository. The file is a GitHub Copilot Agent mode prompt — paste it directly into Copilot Chat in Agent mode and it builds the complete skills infrastructure for a new project from the first commit. It collects your project name, description, stack, and GitHub username before creating anything.
+
+**Use Project 1 when:**
+- The repository does not exist yet
+- You want skills wired in before any application code is written
+- You want the full four-skill system (feature scaffold, code review, git commit, skill scaffold) as a starting point
+- You want the skillpack validator and CI workflow set up automatically
+
+After the prompt completes, read the **Tutorial** section at the end of `Project1-Greenfield.md` for a walkthrough of every decision the prompt made and how to customize the output for your stack.
+
+---
+
+## 13. Project 2: Retrofit
+
+See **[Project2-Retrofit.md](./Project2-Retrofit.md)**.
+
+Use this project if you have an existing populated repository. The file is a GitHub Copilot Agent mode prompt — paste it directly into Copilot Chat in Agent mode and it audits the codebase, identifies skill candidates from commit history and existing documentation, and adds skills without modifying any application code.
+
+**Use Project 2 when:**
+- The repository already has application code, history, and conventions
+- You want skills extracted from patterns that are already present in the codebase
+- You want all changes isolated in a single PR that is easy to review and revert
+
+After the prompt completes, read the **Tutorial** section at the end of `Project2-Retrofit.md` for a walkthrough of the audit methodology, the extraction decisions, and how to maintain the skills as the codebase evolves.
 
 ---
 

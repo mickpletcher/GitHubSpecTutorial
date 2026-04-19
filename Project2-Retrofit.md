@@ -943,6 +943,125 @@ Next steps:
 
 ---
 
+---
+
+## Tutorial: Understanding the retrofit process
+
+This section explains the reasoning behind the audit methodology, why each extraction pattern produces good skills, and how to maintain the skills you added as the codebase evolves. Read it after the prompt completes.
+
+---
+
+### Why audit-first is non-negotiable
+
+The most common mistake in a retrofit is to write skills from memory — a developer thinks about what their team does and writes instructions from their mental model of the process. These skills are almost always wrong in ways that only become visible when Copilot tries to follow them.
+
+The actual workflow stored in a codebase is almost always different from what developers believe it to be. The file paths are slightly different. The command has an extra flag. The registration step has an order dependency nobody remembers consciously. The skill body must reflect the actual codebase, not the remembered version.
+
+The audit extracts from real sources: git history (what actually happened), CONTRIBUTING.md (what was written down), PR templates (what reviewers actually check), and CI failures (what developers actually get wrong). Every one of these sources is grounded in reality. Memory is not.
+
+---
+
+### Why the three sources reliably produce good skills
+
+**CONTRIBUTING.md — the workflow already written down**
+
+A CONTRIBUTING.md "How to add a new endpoint" section is a skill body first draft. The author wrote it because the workflow is non-obvious enough to need documentation. That is exactly the criterion for a good skill: complex enough to need documentation, repeated often enough to automate.
+
+The transformation from CONTRIBUTING.md section to skill body is about specificity. The contributing guide tells a human what to do. The skill tells Copilot exactly where to look and what to check:
+
+Contributing guide step: "Create a route file in `src/routes/`"
+
+Skill body step: "Create `src/routes/{resource}.routes.ts` using `src/routes/user.routes.ts` as the template. Copy the import structure and replace `User` with `{Resource}`. Register the route in `src/app.ts` by adding `app.use('/api/{resource}s', {resource}Router)` after line 47."
+
+The content is the same. The specificity is completely different. Copilot cannot follow vague instructions reliably. It follows specific ones.
+
+**PR templates — the review already encoded**
+
+A PR checklist is a list of things reviewers need to verify before merging. Each checklist item is a code review skill criterion. The team already did the work of deciding what matters — the skill just automates the checking.
+
+The transformation is direct: each `- [ ] item` in the PR template becomes a review criterion in the `code-review` skill body. The difference is that the skill actually reads the diff and evaluates each criterion rather than asking a developer to remember to check.
+
+**CI failures — the mistakes developers already make**
+
+If the same CI check fails repeatedly, a developer is consistently missing a step. That missing step is a skill insertion point. The skill body should include that step explicitly, before the work is committed, so CI never sees the failure again.
+
+Finding recurring CI failures is one of the highest-ROI things the audit does. A skill that prevents a CI failure is worth more than one that codifies a workflow that already runs reliably.
+
+---
+
+### The extraction transformation explained
+
+The single most important concept in a retrofit is the difference between what a contributing guide tells a human and what a skill body tells Copilot.
+
+A contributing guide is written for a human developer reading it once, understanding the intent, and applying judgment to fill in the gaps. It can be brief because the reader has context.
+
+A skill body is written for Copilot executing it on every invocation, with no memory of previous invocations, and no judgment to fill in gaps. It must be complete and explicit.
+
+**What a contributing guide can leave implicit:**
+- "Create the route file" — the developer knows what format, where to put it, what to name it
+- "Write tests" — the developer knows your test framework, naming conventions, and what to cover
+- "Update the docs" — the developer knows which docs and what format
+
+**What a skill body must make explicit:**
+- "Create `src/routes/{resource}.routes.ts` using `src/routes/user.routes.ts` as the template"
+- "Create `src/__tests__/{resource}.test.ts`. Cover: happy path for GET/POST, missing required fields (expect 400), unauthorized access (expect 401)"
+- "Open `docs/openapi.yml`. Add paths and schema under the `paths` and `components/schemas` keys. Run `npm run validate:openapi` to confirm"
+
+Every implicit assumption in the contributing guide becomes an explicit instruction in the skill body. This is the core intellectual work of a retrofit.
+
+---
+
+### The scoring criteria mapped to real value
+
+The audit scores skill candidates on frequency and cost of mistakes. Here is what those criteria actually mean in practice.
+
+**Frequency** is not about how often a task happens — it is about how often a developer has to think about it. A task done weekly that is muscle memory (running the test suite) is not a good skill candidate. A task done weekly that requires remembering a non-obvious sequence of steps (adding a new endpoint with its five required files) is an excellent candidate.
+
+**Cost of mistakes** is the time and frustration caused when a step is missed. A missing file that causes a build error is a cost. A wrong naming convention that requires renaming files across the codebase is a higher cost. A missed security check that ships to production is a much higher cost.
+
+The best skill candidates score high on both: workflows done frequently enough that small time savings compound, with mistakes costly enough that preventing even one pays for the skill setup time.
+
+---
+
+### Maintaining skills as the codebase evolves
+
+Skills extracted from an existing codebase are coupled to that codebase. When the patterns change, the skills must change too. This is the maintenance obligation that does not exist in a greenfield setup.
+
+**Triggers that mean a skill needs updating:**
+- A file path referenced in a skill body no longer exists
+- A command in a skill body has changed flags or syntax
+- A registration step has moved to a different file or changed format
+- A new required step was added to the workflow but is not in the skill body
+- A skill's CI validation is failing because the skill body produces output that no longer matches conventions
+
+**The skill update process:**
+```bash
+# Locate the skill
+ls .github/skills/
+
+# Edit the body — make it match current reality
+code .github/skills/[skill-name]/SKILL.md
+
+# Update the version field
+# 1.0.0 → 1.1.0 for body changes that maintain the same workflow
+# 1.0.0 → 2.0.0 for workflow changes that break backward compatibility
+
+# Validate
+./scripts/skillpack.sh --validate
+
+# Commit
+git add .github/skills/[skill-name]/
+git commit -m "fix(skills): update [skill-name] for [change description]"
+```
+
+**Who owns skill maintenance:**
+The developer who notices the skill is wrong owns the fix. This is the same as fixing a stale comment in code — whoever sees it fixes it. The validator catches structural issues at commit time. Semantic drift (the skill body is valid but no longer accurate) is caught by usage — when Copilot produces incorrect output following a skill, that is the signal that the skill needs updating.
+
+**Skills as living documentation:**
+A skill is more authoritative than a CONTRIBUTING.md section because it is what Copilot actually executes. When a skill and the contributing guide disagree, fix the skill first — it is the executable specification of the workflow. Then update the contributing guide to match.
+
+---
+
 ## Out of scope for this task
 
 - Do not modify any application source code
