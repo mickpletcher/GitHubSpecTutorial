@@ -339,6 +339,7 @@ The rules for every SKILL.md written in this step:
 4. The `version` field must be `1.0.0`
 5. The `argument-hint` must be quoted
 6. Skills that the user should only invoke explicitly (scaffolding, migration creation) must include `disable-model-invocation: true`
+7. Add `allowed-tools` only when needed, prefer read-only tool scopes by default, and never pre-approve `shell` or `bash` tools unless the user explicitly requests high-trust command execution behavior
 
 ### Writing each skill
 

@@ -127,6 +127,13 @@ instructions.md    # How to use Copilot Skills in this project
 
 Write each `SKILL.md` with the actual project language substituted into examples. These are production-quality skills, not placeholders. Every field is populated. Every step is specific.
 
+Before writing skill frontmatter, apply these safety rules:
+
+1. Only add `allowed-tools` when a skill truly requires tool constraints.
+2. Prefer read-only tool scopes for review and analysis skills.
+3. Do not pre-approve `shell` or `bash` access in generated skills unless the user explicitly asks for high-trust command execution behavior.
+4. If shell-capable tools are added, include a warning in the skill body that commands should be reviewed before execution.
+
 ### `.github/skills/feature-scaffold/SKILL.md`
 
 Customize the file structure, templates, and registration steps for the language the user provided. The example below uses TypeScript/Express — adapt it to the actual stack.
