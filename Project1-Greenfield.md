@@ -1,5 +1,7 @@
 # Copilot Task: Greenfield Project — GitHub Copilot Agent Skills Setup
 
+<!-- markdownlint-disable MD022 MD024 MD031 MD032 MD040 MD058 MD060 -->
+
 Paste this prompt into GitHub Copilot **Agent mode** in VS Code. Agent mode is required — this prompt creates files, runs terminal commands, and validates the result. Ask mode will not work.
 
 Before starting, open a new empty folder in VS Code. This prompt assumes an empty workspace. Run it once per project.
@@ -1249,3 +1251,5 @@ When a skill becomes wrong — because the project structure changed or the team
 - Do not push to GitHub — provide the commands but let the user execute the push
 - Do not create GitHub Issues, Projects, or repository settings
 - Do not install any VS Code extensions
+
+<!-- markdownlint-enable MD022 MD024 MD031 MD032 MD040 MD058 MD060 -->

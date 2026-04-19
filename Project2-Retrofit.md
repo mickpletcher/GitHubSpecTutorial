@@ -1,5 +1,7 @@
 # Copilot Task: Retrofit — Adding GitHub Copilot Agent Skills to an Existing Repository
 
+<!-- markdownlint-disable MD031 MD032 MD036 MD040 MD058 MD060 -->
+
 Paste this prompt into GitHub Copilot **Agent mode** in VS Code. Agent mode is required — this prompt reads repository files, runs terminal commands, creates new files, and validates the result. Ask mode will not work.
 
 Before starting, open the existing repository in VS Code. This prompt assumes a populated codebase is already present. It does not touch application code, existing CI workflows, or any file outside of `.github/skills/`, `scripts/`, and the two new files it creates (`instructions.md` and the CI workflow).
@@ -1071,3 +1073,5 @@ A skill is more authoritative than a CONTRIBUTING.md section because it is what 
 - Do not push to remote — provide the commands but let the user execute the push
 - Do not create GitHub Issues or Projects
 - Do not overwrite existing skill files without explicit user confirmation
+
+<!-- markdownlint-enable MD031 MD032 MD036 MD040 MD058 MD060 -->

@@ -1,5 +1,7 @@
 # GitHub Copilot Agent Skills — Setup and Authoring Guide
 
+<!-- markdownlint-disable MD031 MD032 MD036 MD040 MD060 -->
+
 This tutorial walks through the Agent Skills specification from scratch to a fully packaged and CI-deployed skillpack. It assumes you are comfortable with VS Code, git, and shell scripting. No hand-holding on basics.
 
 ---
@@ -733,3 +735,5 @@ After the prompt completes, read the **Tutorial** section at the end of `Project
 - [GitHub Docs: Adding agent skills for Copilot](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/coding-agent/create-skills)
 - [github/awesome-copilot](https://github.com/github/awesome-copilot) — community skill catalog
 - [anthropics/skills](https://github.com/anthropics/skills) — reference skills from Anthropic
+
+<!-- markdownlint-enable MD031 MD032 MD036 MD040 MD060 -->
