@@ -21,9 +21,9 @@ Your goal is to produce a repository that is ready to push to GitHub and immedia
 Before creating any files, ask the user for the following. Do not proceed until you have all four answers.
 
 1. **Project name** — used for the root `README.md` heading and the `package.json` or project manifest if one exists. Use kebab-case for directory and file naming (e.g., `my-api-service`).
-2. **Project description** — one sentence describing what this project does. Used in `README.md` and `instructions.md`.
+2. **Project description** — one sentence describing what this project does. Used in `README.md` and `COPILOT-SKILLS.md`.
 3. **Primary language or stack** — used to make the feature-scaffold skill concrete (e.g., TypeScript/Node, Python/FastAPI, C#/.NET, Go). If the user says "generic," use language-agnostic examples.
-4. **GitHub username or org** — used to pre-fill the remote URL in `instructions.md`.
+4. **GitHub username or org** — used to pre-fill the remote URL in `COPILOT-SKILLS.md`.
 
 Store the answers as variables and use them throughout. Do not use placeholder text like `[PROJECT_NAME]` in any output file — substitute the real values everywhere.
 
@@ -107,17 +107,17 @@ Type `/` in Copilot Chat to invoke any skill directly, or describe what you want
 
 ## Getting started
 
-See [instructions.md](./instructions.md) for setup, skill usage, and how to add new skills to this project.
+See [COPILOT-SKILLS.md](./COPILOT-SKILLS.md) for setup, skill usage, and how to add new skills to this project.
 
 ## Repository structure
 
 ```
 .github/
-  skills/          # Copilot Agent Skills
-  workflows/       # GitHub Actions — skill validation and packaging
+skills/        # Copilot Agent Skills
+workflows/     # GitHub Actions — skill validation and packaging
 docs/              # Project documentation
 scripts/           # Developer tooling — skillpack.sh for validation and packaging
-instructions.md    # How to use Copilot Skills in this project
+COPILOT-SKILLS.md  # How to use Copilot Skills in this project
 ```
 ```
 
@@ -274,41 +274,73 @@ Run `git diff --staged` if changes are staged. If nothing is staged, run `git di
 
 ### Step 2 — Identify the intent
 
-Determine what the change is trying to accomplish before evaluating how it does it. A change that is correct for its intent but wrong in approach gets a different note than a change with flawed intent.
+Determine what the change is trying to accomplish before evaluating how it does it.
 
-### Step 3 — Produce structured output
+### Step 3 — Apply the rubric
 
+Use the severity rubric and output format in [reference/review-rubric.md](./reference/review-rubric.md). Do not inline the rubric — follow the file.
+
+### Step 4 — Ground every comment in the diff
+
+Reference file name and line number for every critical issue and advisory note. Do not raise issues about unchanged code. Do not flag style issues handled by the project linter or formatter.
 ```
+
+### `.github/skills/code-review/reference/review-rubric.md`
+
+Create the reference directory and file. This content is loaded only when a review is actually in progress, keeping the base skill lightweight.
+
+```bash
+mkdir -p .github/skills/code-review/reference
+```
+
+```markdown
+# Code Review Rubric
+
+## Output format
+
 ## Code Review
 
 ### Summary
+
 [One sentence: what does this change do?]
 
 ### Critical issues
+
 [Issues that should block merge — correctness, security, data integrity]
+
 - [file:line] description of the issue and why it matters
 
 ### Advisory
+
 [Suggestions that improve quality but do not block merge]
+
 - [file:line] suggestion with rationale
 
 ### Missing coverage
+
 [Behaviors that are changed but not tested]
+
 - [description of what should be tested]
 
 ### Verdict
-[ ] Approved
-[ ] Approved with minor changes
-[ ] Changes required before merge
-```
+
+- [ ] Approved
+- [ ] Approved with minor changes
+- [ ] Changes required before merge
+
+## Severity definitions
+
+**Critical** — correctness bugs, security issues, data integrity risks, broken public contracts. Blocks merge.
+
+**Advisory** — readability, maintainability, minor performance, better idioms. Does not block merge.
+
+**Missing coverage** — behavior changed without a corresponding test. Always list even when no critical or advisory issues exist.
 
 ## Rules
 
-- Ground every comment in the actual diff. Do not raise issues about unchanged code.
-- Reference file name and line number for every critical issue and advisory note.
-- Do not flag style issues handled by the project linter or formatter.
-- If the change is clean, say so. An empty critical issues section is a valid review.
+- If the change is clean, an empty critical issues section is a valid review. Say so.
 - Do not approve changes that lack tests for new behavior.
+- Do not flag linter-handled style issues.
 ```
 
 ### `.github/skills/code-review/README.md`
@@ -576,6 +608,10 @@ the new skill passes all validation checks before committing.
 
 ---
 
+### Why code-review uses a reference file
+
+The full rubric lives in `reference/review-rubric.md` instead of inline in `SKILL.md`. This is the progressive disclosure pattern — keep the base skill body short, and let the agent load detail files only when the task actually requires them. See TUTORIAL.md section "Keeping Skills Small: Progressive Disclosure" for more.
+
 ## Step 6 — Create `scripts/skillpack.sh`
 
 Create `scripts/skillpack.sh` with the following content exactly. Make it executable after writing.
@@ -617,10 +653,13 @@ json_escape() {
 
 trim_quotes() {
     local value="$1"
-    if [[ "$value" == \"*\" ]]; then
-        value=${value:1:-1}
-    elif [[ "$value" == \'*\' ]]; then
-        value=${value:1:-1}
+    local len=${#value}
+    if (( len >= 2 )); then
+        local first="${value:0:1}"
+        local last="${value:$((len-1)):1}"
+        if { [[ "$first" == '"' ]] && [[ "$last" == '"' ]]; } || { [[ "$first" == "'" ]] && [[ "$last" == "'" ]]; }; then
+            value="${value:1:$((len-2))}"
+        fi
     fi
     printf '%s' "$value"
 }
@@ -695,9 +734,10 @@ validate_skills() {
             echo "Missing description field in $skill_name/SKILL.md" >&2
             exit 1
         fi
+        # Note: version is a repo convention, not part of the Agent Skills spec.
+        # Warn only if missing so skills from awesome-copilot or anthropics/skills still validate.
         if ! grep -q '^version:' "${skill_dir}SKILL.md"; then
-            echo "Missing version field in $skill_name/SKILL.md" >&2
-            exit 1
+            echo "Note: no version field in $skill_name/SKILL.md (optional — this repo uses it for the manifest)" >&2
         fi
 
         declared_name=$(extract_frontmatter_value "${skill_dir}SKILL.md" "name")
@@ -718,7 +758,7 @@ validate_skills() {
             exit 1
         fi
 
-        desc_length=$(extract_frontmatter_value "${skill_dir}SKILL.md" "description" | wc -c)
+        desc_length=$(printf '%s' "$(extract_frontmatter_value "${skill_dir}SKILL.md" "description")" | wc -c)
         if [[ $desc_length -gt 1024 ]]; then
             echo "Description too long in $skill_name/SKILL.md: $desc_length characters (max 1024)" >&2
             exit 1
@@ -859,7 +899,7 @@ jobs:
 
 ---
 
-## Step 8 — Create `instructions.md`
+## Step 8 — Create `COPILOT-SKILLS.md`
 
 This is the primary human-facing document. It lives in the project root and tells every developer how to use the Copilot skills, how to add new ones, and how to push the project to GitHub. Substitute the actual project name, description, and GitHub username collected in Step 1.
 
@@ -982,8 +1022,9 @@ All skills must pass before committing. The validator checks:
 - `name` is lowercase letters, digits, and hyphens only
 - `name` is 64 characters or less
 - `description` is 1024 characters or less
-- `version` field is present
 - `README.md` exists
+
+The validator also reports (warning only, non-failing) if a `version` field is missing. This repo uses `version` as a convention for the generated manifest, but it is not part of the Agent Skills spec.
 
 **Step 4 — Update the skills table in `README.md`:**
 
@@ -1076,7 +1117,7 @@ If any skill fails, report the exact error and fix it before proceeding. Do not 
 Once validation passes, stage everything and make the initial commit:
 
 ```bash
-git init
+git rev-parse --git-dir >/dev/null 2>&1 || git init
 git add .
 git status
 ```
@@ -1087,7 +1128,7 @@ Show the user the full git status output so they can verify every expected file 
 git commit -m "feat: initialize project with GitHub Copilot Agent Skills
 
 Adds four skills (feature-scaffold, code-review, git-commit, skill-scaffold),
-the skillpack validation script, a GitHub Actions workflow, and instructions.md
+the skillpack validation script, a GitHub Actions workflow, and COPILOT-SKILLS.md
 documenting skill usage and the process for adding new skills."
 ```
 
@@ -1112,7 +1153,7 @@ Setup complete. Here is what was created:
   .github/skills/skill-scaffold/     — creates new skill folders
   scripts/skillpack.sh               — validates and packages skills
   .github/workflows/validate-skills.yml  — CI validation on push and PR
-  instructions.md                    — setup and usage guide for this project
+  COPILOT-SKILLS.md                    — setup and usage guide for this project
   README.md                          — project overview with skills table
   .gitignore
 
@@ -1126,7 +1167,7 @@ Next steps:
 3. Open the Actions tab on GitHub and confirm the validate-skills workflow passes.
 4. Start building. Use /feature-scaffold when adding the first feature.
 
-See instructions.md for full usage details and how to add new skills as the project grows.
+See COPILOT-SKILLS.md for full usage details and how to add new skills as the project grows.
 ```
 
 Substitute the actual GitHub username and project name from Step 1 into the Next steps output.

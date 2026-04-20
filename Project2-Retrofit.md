@@ -1,10 +1,10 @@
 # Copilot Task: Retrofit — Adding GitHub Copilot Agent Skills to an Existing Repository
 
-<!-- markdownlint-disable MD031 MD032 MD036 MD040 MD058 MD060 -->
+<!-- markdownlint-disable MD012 MD031 MD032 MD036 MD040 MD058 MD060 -->
 
 Paste this prompt into GitHub Copilot **Agent mode** in VS Code. Agent mode is required — this prompt reads repository files, runs terminal commands, creates new files, and validates the result. Ask mode will not work.
 
-Before starting, open the existing repository in VS Code. This prompt assumes a populated codebase is already present. It does not touch application code, existing CI workflows, or any file outside of `.github/skills/`, `scripts/`, and the two new files it creates (`instructions.md` and the CI workflow).
+Before starting, open the existing repository in VS Code. This prompt assumes a populated codebase is already present. It does not touch application code, existing CI workflows, or any file outside of `.github/skills/`, `scripts/`, and the two new files it creates (`COPILOT-SKILLS.md` and the CI workflow).
 
 ---
 
@@ -49,7 +49,7 @@ cat .github/pull_request_template.md 2>/dev/null || cat .github/PULL_REQUEST_TEM
 ls .github/ISSUE_TEMPLATE/ 2>/dev/null || echo "No issue templates found"
 
 # Check for existing custom instructions
-cat .github/copilot-instructions.md 2>/dev/null || echo "No Copilot instructions found"
+cat .github/copilot-COPILOT-SKILLS.md 2>/dev/null || echo "No Copilot instructions found"
 ```
 
 ### Existing CI
@@ -104,6 +104,13 @@ git ls-files | grep -oE '\.[^.]+$' | sort | uniq -c | sort -rn | head -10
 # Check if any skills are already present
 ls .github/skills/ 2>/dev/null && echo "Skills found:" && ls .github/skills/ || echo "No existing skills directory"
 
+# Check if gh skill CLI is available and what is already installed
+gh --version 2>/dev/null | head -1 || echo "gh CLI not installed"
+gh skill list 2>/dev/null || echo "gh skill not available (requires gh CLI v2.90.0+)"
+
+# Check if any skills were installed via gh skill (they carry provenance metadata)
+grep -lR "^_source:" .github/skills/ .claude/skills/ .agents/skills/ 2>/dev/null | head -10 || echo "No gh-skill-installed skills detected"
+
 # Check for a skillpack script
 ls scripts/skillpack.sh 2>/dev/null || echo "No skillpack script found"
 ```
@@ -119,6 +126,8 @@ Repository summary:
 - Existing CI workflows: [list names]
 - Existing Copilot skills: [found n / not found]
 - Existing skillpack script: [found / not found]
+- gh skill CLI available: [yes / no / version]
+- Skills installed via gh skill: [count or "none"]
 - Top changed directories: [list top 3]
 ```
 
@@ -345,6 +354,17 @@ The rules for every SKILL.md written in this step:
 
 For each skill:
 
+### Before writing: consider progressive disclosure
+
+If a candidate skill would produce a SKILL.md longer than ~100 lines, or contains a long rubric, checklist, or data table that is only needed during certain invocations, split it:
+
+- Keep `SKILL.md` short — workflow steps, when-to-use, and edge cases only
+- Move rubrics, templates, and reference data into `reference/` subdirectory files
+- Move executable helpers into `scripts/` subdirectory files
+- Reference them from `SKILL.md` with relative paths
+
+The agent loads these supplementary files on demand when the invocation requires them, keeping base context small. See TUTORIAL.md "Keeping Skills Small: Progressive Disclosure" for details. The canonical examples are in [anthropics/skills](https://github.com/anthropics/skills).
+
 **Step 6a — Write the frontmatter**
 
 Pull the description from the CONTRIBUTING.md section, PR template, or commit pattern that surfaced this skill. The description should read like what a developer types in chat, not like a spec.
@@ -411,10 +431,13 @@ json_escape() {
 
 trim_quotes() {
     local value="$1"
-    if [[ "$value" == \"*\" ]]; then
-        value=${value:1:-1}
-    elif [[ "$value" == \'*\' ]]; then
-        value=${value:1:-1}
+    local len=${#value}
+    if (( len >= 2 )); then
+        local first="${value:0:1}"
+        local last="${value:$((len-1)):1}"
+        if { [[ "$first" == '"' ]] && [[ "$last" == '"' ]]; } || { [[ "$first" == "'" ]] && [[ "$last" == "'" ]]; }; then
+            value="${value:1:$((len-2))}"
+        fi
     fi
     printf '%s' "$value"
 }
@@ -489,9 +512,10 @@ validate_skills() {
             echo "Missing description field in $skill_name/SKILL.md" >&2
             exit 1
         fi
+        # Note: version is a repo convention, not part of the Agent Skills spec.
+        # Warn only if missing so skills from awesome-copilot or anthropics/skills still validate.
         if ! grep -q '^version:' "${skill_dir}SKILL.md"; then
-            echo "Missing version field in $skill_name/SKILL.md" >&2
-            exit 1
+            echo "Note: no version field in $skill_name/SKILL.md (optional — this repo uses it for the manifest)" >&2
         fi
 
         declared_name=$(extract_frontmatter_value "${skill_dir}SKILL.md" "name")
@@ -512,7 +536,7 @@ validate_skills() {
             exit 1
         fi
 
-        desc_length=$(extract_frontmatter_value "${skill_dir}SKILL.md" "description" | wc -c)
+        desc_length=$(printf '%s' "$(extract_frontmatter_value "${skill_dir}SKILL.md" "description")" | wc -c)
         if [[ $desc_length -gt 1024 ]]; then
             echo "Description too long in $skill_name/SKILL.md: $desc_length characters (max 1024)" >&2
             exit 1
@@ -613,7 +637,9 @@ chmod +x scripts/skillpack.sh
 Add `dist/skillpack/` and `dist/skillpack.tar.gz` to `.gitignore` if they are not already present:
 
 ```bash
-grep -q "dist/skillpack" .gitignore 2>/dev/null || printf '\n# Skillpack output\ndist/skillpack/\ndist/skillpack.tar.gz\n' >> .gitignore
+# Create .gitignore if it does not exist, then append skillpack exclusions if not already present
+touch .gitignore
+grep -q "dist/skillpack" .gitignore || printf '\n# Skillpack output\ndist/skillpack/\ndist/skillpack.tar.gz\n' >> .gitignore
 ```
 
 ---
@@ -670,9 +696,9 @@ The `paths` filter on `pull_request` is intentional. This workflow only fires on
 
 ---
 
-## Step 9 — Create `instructions.md`
+## Step 9 — Create `COPILOT-SKILLS.md`
 
-Create `instructions.md` in the repository root. This file documents what was added, how to use each skill, and how to add new skills going forward. Populate it with the actual skill names and descriptions from this session — do not use generic placeholder content.
+Create `COPILOT-SKILLS.md` in the repository root. This file documents what was added, how to use each skill, and how to add new skills going forward. Populate it with the actual skill names and descriptions from this session — do not use generic placeholder content.
 
 ```markdown
 # Copilot Skills — [REPO_NAME]
@@ -790,9 +816,10 @@ Validation checks enforced:
 | `name` is lowercase + hyphens only | Spec compliance |
 | `name` ≤ 64 characters | Spec compliance |
 | `description` ≤ 1024 characters | Spec compliance |
-| `version` field present | Repo convention for manifest |
 | `README.md` exists | Skills must be documented |
 | Frontmatter markers present | Catches malformed SKILL.md files |
+
+The validator also reports (warning only, non-failing) if a `version` field is missing. This repo uses `version` as a convention for the generated manifest, but it is not part of the Agent Skills spec.
 
 ---
 
@@ -856,7 +883,7 @@ git checkout -b feat/add-copilot-skills
 git add .github/skills/
 git add scripts/skillpack.sh
 git add .github/workflows/validate-skills.yml
-git add instructions.md
+git add COPILOT-SKILLS.md
 git add .gitignore
 
 # Confirm nothing unintended is staged
@@ -874,7 +901,7 @@ Extracted [N] skills from existing repository patterns:
 [List each skill and its one-line description]
 
 Adds skillpack validation script and CI workflow.
-No application code changes. See instructions.md for usage."
+No application code changes. See COPILOT-SKILLS.md for usage."
 ```
 
 Substitute the actual skill names and descriptions collected during this session.
@@ -912,7 +939,7 @@ Adds [N] Copilot Agent Skills extracted from existing repository patterns.
 
 ## Reviewer notes
 
-See \`instructions.md\` for usage documentation and how to add new skills going forward."
+See \`COPILOT-SKILLS.md\` for usage documentation and how to add new skills going forward."
 ```
 
 Then output the final summary:
@@ -927,7 +954,7 @@ Files created:
   .github/skills/[skill-name]/   — for each skill added
   scripts/skillpack.sh           — validation and packaging
   .github/workflows/validate-skills.yml  — CI validation
-  instructions.md                — usage guide and conventions
+  COPILOT-SKILLS.md                — usage guide and conventions
 
 Files modified:
   .gitignore                     — added dist/skillpack/ exclusions
@@ -940,7 +967,7 @@ Files not touched:
 Next steps:
 1. Merge the PR
 2. Open the repo in VS Code and type / to confirm all skills appear
-3. Add a Copilot Skills section to CONTRIBUTING.md pointing to instructions.md
+3. Add a Copilot Skills section to CONTRIBUTING.md pointing to COPILOT-SKILLS.md
 4. Run /skill-scaffold when the next repeatable workflow is identified
 ```
 
@@ -1074,5 +1101,4 @@ A skill is more authoritative than a CONTRIBUTING.md section because it is what 
 - Do not push to remote — provide the commands but let the user execute the push
 - Do not create GitHub Issues or Projects
 - Do not overwrite existing skill files without explicit user confirmation
-
-<!-- markdownlint-enable MD031 MD032 MD036 MD040 MD058 MD060 -->
+<!-- markdownlint-enable MD012 MD031 MD032 MD036 MD040 MD058 MD060 -->
