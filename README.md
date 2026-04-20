@@ -38,6 +38,7 @@ If you already know the basics, jump to [TUTORIAL.md](./TUTORIAL.md#why-my-skill
 - A skill is a directory containing `SKILL.md` and optional supporting files.
 - Copilot uses `description` to decide whether a skill is relevant for a prompt.
 - The `name` field in `SKILL.md` must exactly match the parent directory name.
+- The `license` field is optional per spec. If the Copilot CLI rejects your skill with a missing-license error, see TUTORIAL.md for the workaround.
 - Repository-level locations include:
   - `.github/skills/<skill-name>/SKILL.md`
   - `.claude/skills/<skill-name>/SKILL.md`
@@ -68,6 +69,7 @@ This repo is documentation only, so no local script is shipped here. Use this re
 
 ## Further Reading
 
+- [gh skill CLI changelog (April 2026)](https://github.blog/changelog/2026-04-16-manage-agent-skills-with-github-cli/)
 - [VS Code Agent Skills docs](https://code.visualstudio.com/docs/copilot/customization/agent-skills)
 - [Agent Skills open standard](https://agentskills.io)
 - [GitHub Docs: Adding agent skills for Copilot](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/coding-agent/create-skills)
